@@ -818,7 +818,77 @@ return result ?? throw new NotFoundException("Record not found.");
 
 ---
 
-## 13. Quick Reference Cheatsheet
+## 13. What to Return from Each Endpoint
+
+### GET — return data or 404
+```csharp
+// GET all — always 200, empty list is fine
+var result = await _dbService.GetAllAsync(...);
+return Ok(result);  // 200
+
+// GET by id — 200 or 404
+try
+{
+    var result = await _dbService.GetByIdAsync(id);
+    return Ok(result);  // 200 + dto
+}
+catch (NotFoundException e) { return NotFound(new ErrorResponseDto { Message = e.Message }); }
+```
+
+### POST — 201 on success
+```csharp
+try
+{
+    await _dbService.CreateAsync(dto);
+    return Created($"api/some", null);  // 201
+}
+catch (NotFoundException e) { return NotFound(...); }    // 404 — FK missing
+catch (ConflictException e) { return Conflict(...); }   // 409 — duplicate/conflict
+```
+
+### PUT — 200 on success
+```csharp
+try
+{
+    await _dbService.UpdateAsync(id, dto);
+    return Ok();  // 200, no body
+}
+catch (NotFoundException e) { return NotFound(...); }
+catch (ConflictException e) { return Conflict(...); }
+```
+
+### DELETE — 204 on success
+```csharp
+try
+{
+    await _dbService.DeleteAsync(id);
+    return NoContent();  // 204, no body
+}
+catch (NotFoundException e) { return NotFound(...); }
+catch (ConflictException e) { return Conflict(...); }
+```
+
+### 400 Bad Request — always BEFORE calling the service
+```csharp
+if (dto is null) return BadRequest("Request body is required.");
+if (string.IsNullOrWhiteSpace(dto.Reason)) return BadRequest("Reason is required.");
+if (dto.Date < DateTime.Now) return BadRequest("Date cannot be in the past.");
+// then call service...
+```
+
+### Full HTTP status summary
+
+| Method | Success | Not found | Conflict | Bad input |
+|--------|---------|-----------|----------|-----------|
+| GET all | 200 + list | — | — | — |
+| GET by id | 200 + dto | 404 | — | — |
+| POST | 201 | 404 (FK missing) | 409 | 400 |
+| PUT | 200 | 404 | 409 | 400 |
+| DELETE | 204 | 404 | 409 | — |
+
+---
+
+## 14. Quick Reference Cheatsheet
 
 | Goal | Method | Returns |
 |------|--------|---------|
