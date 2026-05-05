@@ -184,7 +184,69 @@ public class ErrorResponseDto
 
 ---
 
-## 6. Exceptions
+## 6. Data Annotations — Validation on DTOs
+
+Add these to **request DTOs only** (POST/PUT bodies). ASP.NET automatically returns `400 Bad Request` if validation fails — no extra code needed in the controller.
+
+```csharp
+using System.ComponentModel.DataAnnotations;
+
+namespace YourProject.DTOs;
+
+public class CreateSomeRequestDto
+{
+    [Required]
+    public int RelatedEntityId { get; set; }        // must be present
+
+    [Required]
+    [StringLength(250, MinimumLength = 1)]           // 1–250 chars
+    public string Reason { get; set; } = string.Empty;
+
+    [Required]
+    public DateTime Date { get; set; }
+
+    [Range(0.01, 10000.00)]                          // numeric range
+    public decimal Price { get; set; }
+
+    [EmailAddress]                                   // must look like an email
+    public string? Email { get; set; }
+
+    [MinLength(1)]                                   // list must have at least 1 item
+    public List<SomeChildDto> Items { get; set; } = [];
+}
+```
+
+### All useful annotations
+
+| Annotation | Use case |
+|---|---|
+| `[Required]` | Field cannot be null or missing |
+| `[StringLength(100)]` | Max character length |
+| `[StringLength(100, MinimumLength = 1)]` | Min and max length |
+| `[Range(1, 999)]` | Numeric min/max |
+| `[EmailAddress]` | Valid email format |
+| `[MinLength(1)]` | String or collection min length |
+
+### What annotations can't do — handle manually in controller
+
+```csharp
+// date in the past
+if (dto.Date < DateTime.Now)
+    return BadRequest("Date cannot be in the past.");
+
+// value must be one of a specific set
+var validStatuses = new[] { "Scheduled", "Completed", "Cancelled" };
+if (!validStatuses.Contains(dto.Status))
+    return BadRequest("Invalid status value.");
+
+// cross-field rules
+if (dto.EndDate < dto.StartDate)
+    return BadRequest("End date must be after start date.");
+```
+
+---
+
+## 7. Exceptions
 
 ```csharp
 // Exceptions/NotFoundException.cs
@@ -204,7 +266,7 @@ public class ConflictException : Exception
 
 ---
 
-## 7. IDbService Skeleton
+## 8. IDbService Skeleton
 
 ```csharp
 using YourProject.DTOs;
@@ -223,7 +285,7 @@ public interface IDbService
 
 ---
 
-## 8. DbService — ADO.NET Patterns
+## 9. DbService — ADO.NET Patterns
 
 ### Constructor (always the same):
 
@@ -526,7 +588,7 @@ public async Task DeleteAsync(int id)
 
 ---
 
-## 9. Controller Skeleton — All 5 Endpoints
+## 10. Controller Skeleton — All 5 Endpoints
 
 ```csharp
 using Microsoft.AspNetCore.Mvc;
@@ -619,14 +681,111 @@ public class SomeController : ControllerBase
 
 ---
 
-## 10. Quick Reference Cheatsheet
+## 11. Pattern 7: Get new ID after INSERT — two ways
+
+### Option A: `OUTPUT INSERTED` (preferred, more explicit)
+```csharp
+command.CommandText = """
+    INSERT INTO dbo.SomeTable (col1, col2)
+    OUTPUT INSERTED.Id
+    VALUES (@Val1, @Val2)
+    """;
+
+var newId = Convert.ToInt32(await command.ExecuteScalarAsync());
+```
+
+### Option B: `SELECT @@IDENTITY` (used in older code / when OUTPUT isn't available)
+```csharp
+command.CommandText = """
+    INSERT INTO dbo.SomeTable (col1, col2)
+    VALUES (@Val1, @Val2)
+    SELECT @@IDENTITY;
+    """;
+
+var newId = Convert.ToInt32(await command.ExecuteScalarAsync());
+```
+
+Both return the auto-generated ID of the row just inserted. `OUTPUT INSERTED` is safer when triggers are involved; `@@IDENTITY` is simpler but can be affected by triggers on other tables.
+
+---
+
+## 12. Pattern 8: Building nested DTOs from flat JOIN results
+
+When your SQL JOINs produce **flat rows** but your DTO has **nested lists**, you need to assemble the structure manually in the while loop.
+
+Example: one Customer → many Rentals → each Rental has many Movies. SQL returns one row per movie, so the same rental appears on multiple rows.
+
+```
+| CustomerId | FirstName | RentalId | RentalDate | MovieTitle  |
+|------------|-----------|----------|------------|-------------|
+| 1          | John      | 10       | 2024-01-01 | Inception   |
+| 1          | John      | 10       | 2024-01-01 | Interstellar|
+| 1          | John      | 11       | 2024-02-01 | Dune        |
+```
+
+```csharp
+ParentDto? result = null;
+
+while (await reader.ReadAsync())
+{
+    // Step 1: build the parent ONCE on the first row
+    if (result is null)
+    {
+        result = new ParentDto
+        {
+            FirstName = reader.GetString(ordFirstName),
+            LastName  = reader.GetString(ordLastName),
+            Children  = new List<ChildDto>()
+        };
+    }
+
+    // Step 2: find or create the child (e.g. Rental)
+    var childId = reader.GetInt32(ordChildId);
+    var child = result.Children.FirstOrDefault(c => c.Id == childId);
+
+    if (child is null)
+    {
+        child = new ChildDto
+        {
+            Id   = childId,
+            Date = reader.GetDateTime(ordDate),
+            // nullable field:
+            ReturnDate = reader.IsDBNull(ordReturnDate)
+                             ? null
+                             : reader.GetDateTime(ordReturnDate),
+            GrandChildren = new List<GrandChildDto>()
+        };
+        result.Children.Add(child);
+    }
+
+    // Step 3: always add the grandchild (e.g. Movie) — new one on every row
+    child.GrandChildren.Add(new GrandChildDto
+    {
+        Title = reader.GetString(ordTitle),
+        Price = reader.GetDecimal(ordPrice)
+    });
+}
+
+// if result is still null, no rows came back — throw 404
+return result ?? throw new NotFoundException("Record not found.");
+```
+
+### The key rules:
+- Parent is created **once** — check `if (result is null)`
+- Child is found or created — use `FirstOrDefault(c => c.Id == childId)`
+- Grandchild is **always added** — every row has a new one
+
+---
+
+## 13. Quick Reference Cheatsheet
 
 | Goal | Method | Returns |
 |------|--------|---------|
 | Many rows | `ExecuteReaderAsync` + `while` | List |
 | One row | `ExecuteReaderAsync` + `if` | DTO or throw 404 |
+| Nested DTOs from flat JOIN | `while` + `FirstOrDefault` + conditional add | Parent DTO |
 | Check exists | `ExecuteScalarAsync` → `!= null` | bool |
-| Get new ID after INSERT | `OUTPUT INSERTED.Id` + `ExecuteScalarAsync` | int |
+| Get new ID after INSERT | `OUTPUT INSERTED.Id` or `SELECT @@IDENTITY` + `ExecuteScalarAsync` | int |
 | Insert/Update/Delete | `ExecuteNonQueryAsync` | void |
 | Nullable column | `reader.IsDBNull(ord) ? null : reader.GetXxx(ord)` | T? |
 | Null SQL param | `(object?)value ?? DBNull.Value` | — |
