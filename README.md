@@ -49,11 +49,11 @@ gh auth login   # follow the prompts
 # Folders
 mkdir Controllers DTOs Exceptions Services
 
-# DTOs
-touch DTOs/AppointmentListDto.cs
-touch DTOs/AppointmentDetailsDto.cs
-touch DTOs/CreateAppointmentRequestDto.cs
-touch DTOs/UpdateAppointmentRequestDto.cs
+# DTOs — one file per DTO (rename to match your domain)
+touch DTOs/SomeListDto.cs
+touch DTOs/SomeDetailsDto.cs
+touch DTOs/CreateSomeRequestDto.cs
+touch DTOs/UpdateSomeRequestDto.cs
 touch DTOs/ErrorResponseDto.cs
 
 # Exceptions
@@ -64,8 +64,8 @@ touch Exceptions/ConflictException.cs
 touch Services/IDbService.cs
 touch Services/DbService.cs
 
-# Controller
-touch Controllers/AppointmentsController.cs
+# Controller — rename to match your resource
+touch Controllers/SomeController.cs
 ```
 
 ---
@@ -130,57 +130,52 @@ app.Run();
 ### DTO Skeletons
 
 ```csharp
-// AppointmentListDto.cs
-namespace Task6.DTOs;
-public class AppointmentListDto
+// SomeListDto.cs — short, for list endpoints
+namespace YourProject.DTOs;
+public class SomeListDto
 {
-    public int IdAppointment { get; set; }
-    public DateTime AppointmentDate { get; set; }
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public DateTime Date { get; set; }
+    public string Status { get; set; } = string.Empty;
+}
+
+// SomeDetailsDto.cs — full details, for get-by-id endpoints
+namespace YourProject.DTOs;
+public class SomeDetailsDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public DateTime Date { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public string? OptionalField { get; set; }        // nullable — may be null
+    public decimal Price { get; set; }
+    public string RelatedEntityName { get; set; } = string.Empty;  // from JOIN
+}
+
+// CreateSomeRequestDto.cs — body of POST request
+namespace YourProject.DTOs;
+public class CreateSomeRequestDto
+{
+    public int RelatedEntityId { get; set; }           // foreign key
+    public DateTime Date { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public decimal Price { get; set; }
+}
+
+// UpdateSomeRequestDto.cs — body of PUT request
+namespace YourProject.DTOs;
+public class UpdateSomeRequestDto
+{
+    public int RelatedEntityId { get; set; }
+    public DateTime Date { get; set; }
     public string Status { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
-    public string PatientFullName { get; set; } = string.Empty;
-    public string PatientEmail { get; set; } = string.Empty;
+    public string? OptionalField { get; set; }
 }
 
-// AppointmentDetailsDto.cs
-namespace Task6.DTOs;
-public class AppointmentDetailsDto
-{
-    public int IdAppointment { get; set; }
-    public DateTime AppointmentDate { get; set; }
-    public string Status { get; set; } = string.Empty;
-    public string Reason { get; set; } = string.Empty;
-    public string? InternalNotes { get; set; }
-    public string PatientFullName { get; set; } = string.Empty;
-    public string PatientEmail { get; set; } = string.Empty;
-    public string PatientPhone { get; set; } = string.Empty;
-    public string DoctorLicenseNumber { get; set; } = string.Empty;
-}
-
-// CreateAppointmentRequestDto.cs
-namespace Task6.DTOs;
-public class CreateAppointmentRequestDto
-{
-    public int IdPatient { get; set; }
-    public int IdDoctor { get; set; }
-    public DateTime AppointmentDate { get; set; }
-    public string Reason { get; set; } = string.Empty;
-}
-
-// UpdateAppointmentRequestDto.cs
-namespace Task6.DTOs;
-public class UpdateAppointmentRequestDto
-{
-    public int IdPatient { get; set; }
-    public int IdDoctor { get; set; }
-    public DateTime AppointmentDate { get; set; }
-    public string Status { get; set; } = string.Empty;
-    public string Reason { get; set; } = string.Empty;
-    public string? InternalNotes { get; set; }
-}
-
-// ErrorResponseDto.cs
-namespace Task6.DTOs;
+// ErrorResponseDto.cs — used in catch blocks
+namespace YourProject.DTOs;
 public class ErrorResponseDto
 {
     public string Message { get; set; } = string.Empty;
@@ -193,14 +188,14 @@ public class ErrorResponseDto
 
 ```csharp
 // Exceptions/NotFoundException.cs
-namespace Task6.Exceptions;
+namespace YourProject.Exceptions;
 public class NotFoundException : Exception
 {
     public NotFoundException(string message) : base(message) { }
 }
 
 // Exceptions/ConflictException.cs
-namespace Task6.Exceptions;
+namespace YourProject.Exceptions;
 public class ConflictException : Exception
 {
     public ConflictException(string message) : base(message) { }
@@ -212,17 +207,17 @@ public class ConflictException : Exception
 ## 7. IDbService Skeleton
 
 ```csharp
-using Task6.DTOs;
+using YourProject.DTOs;
 
-namespace Task6.Services;
+namespace YourProject.Services;
 
 public interface IDbService
 {
-    Task<IEnumerable<AppointmentListDto>> GetAllAppointmentsAsync(string? status, string? patientLastName);
-    Task<AppointmentDetailsDto> GetAppointmentByIdAsync(int id);
-    Task CreateAppointmentAsync(CreateAppointmentRequestDto dto);
-    Task UpdateAppointmentAsync(int id, UpdateAppointmentRequestDto dto);
-    Task DeleteAppointmentAsync(int id);
+    Task<IEnumerable<SomeListDto>> GetAllAsync(string? filterParam1, string? filterParam2);
+    Task<SomeDetailsDto> GetByIdAsync(int id);
+    Task CreateAsync(CreateSomeRequestDto dto);
+    Task UpdateAsync(int id, UpdateSomeRequestDto dto);
+    Task DeleteAsync(int id);
 }
 ```
 
@@ -230,14 +225,14 @@ public interface IDbService
 
 ## 8. DbService — ADO.NET Patterns
 
-### Full skeleton with constructor:
+### Constructor (always the same):
 
 ```csharp
 using Microsoft.Data.SqlClient;
-using Task6.DTOs;
-using Task6.Exceptions;
+using YourProject.DTOs;
+using YourProject.Exceptions;
 
-namespace Task6.Services;
+namespace YourProject.Services;
 
 public class DbService : IDbService
 {
@@ -257,47 +252,42 @@ public class DbService : IDbService
 ### Pattern 1: SELECT many rows → return list
 
 ```csharp
-public async Task<IEnumerable<AppointmentListDto>> GetAllAppointmentsAsync(string? status, string? patientLastName)
+public async Task<IEnumerable<SomeListDto>> GetAllAsync(string? filterParam1, string? filterParam2)
 {
     var query = """
-        SELECT a.IdAppointment, a.AppointmentDate, a.Status, a.Reason,
-               p.FirstName + ' ' + p.LastName AS PatientFullName,
-               p.Email AS PatientEmail
-        FROM dbo.Appointments a
-        JOIN dbo.Patients p ON p.IdPatient = a.IdPatient
-        WHERE (@Status IS NULL OR a.Status = @Status)
-          AND (@PatientLastName IS NULL OR p.LastName = @PatientLastName)
-        ORDER BY a.AppointmentDate
+        SELECT t.col1, t.col2, t.col3,
+               r.col1 AS RelatedCol
+        FROM dbo.SomeTable t
+        JOIN dbo.RelatedTable r ON r.Id = t.RelatedId
+        WHERE (@Filter1 IS NULL OR t.col1 = @Filter1)
+          AND (@Filter2 IS NULL OR r.col2 = @Filter2)
+        ORDER BY t.col1
         """;
 
     await using var connection = new SqlConnection(_connectionString);
     await connection.OpenAsync();
 
     await using var command = new SqlCommand(query, connection);
-    command.Parameters.AddWithValue("@Status", (object?)status ?? DBNull.Value);
-    command.Parameters.AddWithValue("@PatientLastName", (object?)patientLastName ?? DBNull.Value);
+    command.Parameters.AddWithValue("@Filter1", (object?)filterParam1 ?? DBNull.Value);
+    command.Parameters.AddWithValue("@Filter2", (object?)filterParam2 ?? DBNull.Value);
 
     await using var reader = await command.ExecuteReaderAsync();
 
-    // get column positions ONCE before loop
-    var ordId       = reader.GetOrdinal("IdAppointment");
-    var ordDate     = reader.GetOrdinal("AppointmentDate");
-    var ordStatus   = reader.GetOrdinal("Status");
-    var ordReason   = reader.GetOrdinal("Reason");
-    var ordFullName = reader.GetOrdinal("PatientFullName");
-    var ordEmail    = reader.GetOrdinal("PatientEmail");
+    // get column positions ONCE before the loop
+    var ord1 = reader.GetOrdinal("col1");
+    var ord2 = reader.GetOrdinal("col2");
+    var ord3 = reader.GetOrdinal("col3");
+    var ordRelated = reader.GetOrdinal("RelatedCol");
 
-    var results = new List<AppointmentListDto>();
+    var results = new List<SomeListDto>();
     while (await reader.ReadAsync())
     {
-        results.Add(new AppointmentListDto
+        results.Add(new SomeListDto
         {
-            IdAppointment   = reader.GetInt32(ordId),
-            AppointmentDate = reader.GetDateTime(ordDate),
-            Status          = reader.GetString(ordStatus),
-            Reason          = reader.GetString(ordReason),
-            PatientFullName = reader.GetString(ordFullName),
-            PatientEmail    = reader.GetString(ordEmail)
+            Field1 = reader.GetInt32(ord1),
+            Field2 = reader.GetString(ord2),
+            Field3 = reader.GetDateTime(ord3),
+            RelatedField = reader.GetString(ordRelated)
         });
     }
 
@@ -310,17 +300,14 @@ public async Task<IEnumerable<AppointmentListDto>> GetAllAppointmentsAsync(strin
 ### Pattern 2: SELECT one row → return DTO or throw 404
 
 ```csharp
-public async Task<AppointmentDetailsDto> GetAppointmentByIdAsync(int id)
+public async Task<SomeDetailsDto> GetByIdAsync(int id)
 {
     var query = """
-        SELECT a.IdAppointment, a.AppointmentDate, a.Status, a.Reason, a.InternalNotes,
-               p.FirstName + ' ' + p.LastName AS PatientFullName,
-               p.Email, p.PhoneNumber,
-               d.LicenseNumber
-        FROM dbo.Appointments a
-        JOIN dbo.Patients p ON p.IdPatient = a.IdPatient
-        JOIN dbo.Doctors d ON d.IdDoctor = a.IdDoctor
-        WHERE a.IdAppointment = @Id
+        SELECT t.col1, t.col2, t.col3, t.nullableCol,
+               r.col1 AS RelatedCol
+        FROM dbo.SomeTable t
+        JOIN dbo.RelatedTable r ON r.Id = t.RelatedId
+        WHERE t.Id = @Id
         """;
 
     await using var connection = new SqlConnection(_connectionString);
@@ -331,24 +318,20 @@ public async Task<AppointmentDetailsDto> GetAppointmentByIdAsync(int id)
 
     await using var reader = await command.ExecuteReaderAsync();
 
-    // use if, not while — expecting one row
+    // use if not while — expecting one row
     if (!await reader.ReadAsync())
-        throw new NotFoundException($"Appointment {id} not found.");
+        throw new NotFoundException($"Record {id} not found.");
 
-    return new AppointmentDetailsDto
+    return new SomeDetailsDto
     {
-        IdAppointment    = reader.GetInt32(reader.GetOrdinal("IdAppointment")),
-        AppointmentDate  = reader.GetDateTime(reader.GetOrdinal("AppointmentDate")),
-        Status           = reader.GetString(reader.GetOrdinal("Status")),
-        Reason           = reader.GetString(reader.GetOrdinal("Reason")),
-        // nullable column — check IsDBNull first
-        InternalNotes    = reader.IsDBNull(reader.GetOrdinal("InternalNotes"))
-                               ? null
-                               : reader.GetString(reader.GetOrdinal("InternalNotes")),
-        PatientFullName  = reader.GetString(reader.GetOrdinal("PatientFullName")),
-        PatientEmail     = reader.GetString(reader.GetOrdinal("Email")),
-        PatientPhone     = reader.GetString(reader.GetOrdinal("PhoneNumber")),
-        DoctorLicenseNumber = reader.GetString(reader.GetOrdinal("LicenseNumber"))
+        Field1       = reader.GetInt32(reader.GetOrdinal("col1")),
+        Field2       = reader.GetString(reader.GetOrdinal("col2")),
+        Field3       = reader.GetDateTime(reader.GetOrdinal("col3")),
+        // nullable column — always check IsDBNull first
+        NullableField = reader.IsDBNull(reader.GetOrdinal("nullableCol"))
+                            ? null
+                            : reader.GetString(reader.GetOrdinal("nullableCol")),
+        RelatedField = reader.GetString(reader.GetOrdinal("RelatedCol"))
     };
 }
 ```
@@ -358,21 +341,29 @@ public async Task<AppointmentDetailsDto> GetAppointmentByIdAsync(int id)
 ### Pattern 3: Check if a record EXISTS
 
 ```csharp
-// returns true/false — use before INSERT/DELETE to validate
-private async Task<bool> ExistsAsync(SqlCommand command, string query, string paramName, object value)
-{
-    command.CommandText = query;
-    command.Parameters.Clear();
-    command.Parameters.AddWithValue(paramName, value);
-    var result = await command.ExecuteScalarAsync();
-    return result != null;
-}
+// inline — reuse the same command object inside a transaction
+command.CommandText = "SELECT 1 FROM dbo.SomeTable WHERE Id = @Id";
+command.Parameters.AddWithValue("@Id", someId);
+if (await command.ExecuteScalarAsync() == null)
+    throw new NotFoundException($"Record {someId} not found.");
 
-// example usage:
-// bool patientExists = await ExistsAsync(command,
-//     "SELECT 1 FROM dbo.Patients WHERE IdPatient = @Id AND IsActive = 1",
-//     "@Id", dto.IdPatient);
-// if (!patientExists) throw new NotFoundException("Patient not found.");
+// check with extra condition (e.g. must be active)
+command.Parameters.Clear();
+command.CommandText = "SELECT 1 FROM dbo.SomeTable WHERE Id = @Id AND IsActive = 1";
+command.Parameters.AddWithValue("@Id", someId);
+if (await command.ExecuteScalarAsync() == null)
+    throw new NotFoundException($"Active record {someId} not found.");
+
+// check for conflict (thing must NOT exist)
+command.Parameters.Clear();
+command.CommandText = """
+    SELECT 1 FROM dbo.SomeTable
+    WHERE ForeignKeyId = @FkId AND Date = @Date
+    """;
+command.Parameters.AddWithValue("@FkId", dto.ForeignKeyId);
+command.Parameters.AddWithValue("@Date", dto.Date);
+if (await command.ExecuteScalarAsync() != null)
+    throw new ConflictException("A record already exists for this time.");
 ```
 
 ---
@@ -380,7 +371,7 @@ private async Task<bool> ExistsAsync(SqlCommand command, string query, string pa
 ### Pattern 4: INSERT with transaction (parent + child records)
 
 ```csharp
-public async Task CreateAppointmentAsync(CreateAppointmentRequestDto dto)
+public async Task CreateAsync(CreateSomeRequestDto dto)
 {
     await using var connection = new SqlConnection(_connectionString);
     await connection.OpenAsync();
@@ -392,46 +383,49 @@ public async Task CreateAppointmentAsync(CreateAppointmentRequestDto dto)
 
     try
     {
-        // Step 1: validate patient exists and is active
-        command.CommandText = "SELECT 1 FROM dbo.Patients WHERE IdPatient = @Id AND IsActive = 1";
-        command.Parameters.AddWithValue("@Id", dto.IdPatient);
+        // Step 1: validate foreign key exists (repeat for each FK)
+        command.CommandText = "SELECT 1 FROM dbo.RelatedTable WHERE Id = @Id";
+        command.Parameters.AddWithValue("@Id", dto.RelatedId);
         if (await command.ExecuteScalarAsync() == null)
-            throw new NotFoundException($"Patient {dto.IdPatient} not found.");
+            throw new NotFoundException($"Related record {dto.RelatedId} not found.");
 
-        // Step 2: validate doctor exists and is active
-        command.Parameters.Clear();
-        command.CommandText = "SELECT 1 FROM dbo.Doctors WHERE IdDoctor = @Id AND IsActive = 1";
-        command.Parameters.AddWithValue("@Id", dto.IdDoctor);
-        if (await command.ExecuteScalarAsync() == null)
-            throw new NotFoundException($"Doctor {dto.IdDoctor} not found.");
-
-        // Step 3: check for scheduling conflict (409)
+        // Step 2: check for conflicts if needed
         command.Parameters.Clear();
         command.CommandText = """
-            SELECT 1 FROM dbo.Appointments
-            WHERE IdDoctor = @IdDoctor
-              AND AppointmentDate = @Date
-              AND Status = 'Scheduled'
+            SELECT 1 FROM dbo.SomeTable
+            WHERE ForeignKeyId = @FkId AND Date = @Date
             """;
-        command.Parameters.AddWithValue("@IdDoctor", dto.IdDoctor);
-        command.Parameters.AddWithValue("@Date", dto.AppointmentDate);
+        command.Parameters.AddWithValue("@FkId", dto.RelatedId);
+        command.Parameters.AddWithValue("@Date", dto.Date);
         if (await command.ExecuteScalarAsync() != null)
-            throw new ConflictException("Doctor already has an appointment at this time.");
+            throw new ConflictException("Conflict: record already exists.");
 
-        // Step 4: insert — use OUTPUT INSERTED to get the new auto-increment ID back
+        // Step 3: insert parent — OUTPUT INSERTED gets the new auto-increment ID
         command.Parameters.Clear();
         command.CommandText = """
-            INSERT INTO dbo.Appointments (IdPatient, IdDoctor, AppointmentDate, Reason, Status)
-            OUTPUT INSERTED.IdAppointment
-            VALUES (@IdPatient, @IdDoctor, @AppointmentDate, @Reason, 'Scheduled')
+            INSERT INTO dbo.SomeTable (col1, col2, col3)
+            OUTPUT INSERTED.Id
+            VALUES (@Val1, @Val2, @Val3)
             """;
-        command.Parameters.AddWithValue("@IdPatient", dto.IdPatient);
-        command.Parameters.AddWithValue("@IdDoctor", dto.IdDoctor);
-        command.Parameters.AddWithValue("@AppointmentDate", dto.AppointmentDate);
-        command.Parameters.AddWithValue("@Reason", dto.Reason);
+        command.Parameters.AddWithValue("@Val1", dto.Field1);
+        command.Parameters.AddWithValue("@Val2", dto.Field2);
+        command.Parameters.AddWithValue("@Val3", (object?)dto.NullableField ?? DBNull.Value);
 
         var newId = Convert.ToInt32(await command.ExecuteScalarAsync());
-        // newId is the auto-generated IdAppointment — use it for child records if needed
+
+        // Step 4: insert child records using the new parent ID
+        foreach (var item in dto.Items)
+        {
+            command.Parameters.Clear();
+            command.CommandText = """
+                INSERT INTO dbo.ChildTable (ParentId, col1, col2)
+                VALUES (@ParentId, @Val1, @Val2)
+                """;
+            command.Parameters.AddWithValue("@ParentId", newId);
+            command.Parameters.AddWithValue("@Val1", item.Field1);
+            command.Parameters.AddWithValue("@Val2", item.Field2);
+            await command.ExecuteNonQueryAsync();
+        }
 
         await transaction.CommitAsync();
     }
@@ -448,7 +442,7 @@ public async Task CreateAppointmentAsync(CreateAppointmentRequestDto dto)
 ### Pattern 5: UPDATE existing record
 
 ```csharp
-public async Task UpdateAppointmentAsync(int id, UpdateAppointmentRequestDto dto)
+public async Task UpdateAsync(int id, UpdateSomeRequestDto dto)
 {
     await using var connection = new SqlConnection(_connectionString);
     await connection.OpenAsync();
@@ -460,31 +454,31 @@ public async Task UpdateAppointmentAsync(int id, UpdateAppointmentRequestDto dto
 
     try
     {
-        // check appointment exists
-        command.CommandText = "SELECT Status FROM dbo.Appointments WHERE IdAppointment = @Id";
+        // check record exists — also grab any field needed for business rules
+        command.CommandText = "SELECT Status FROM dbo.SomeTable WHERE Id = @Id";
         command.Parameters.AddWithValue("@Id", id);
         var currentStatus = await command.ExecuteScalarAsync() as string;
         if (currentStatus == null)
-            throw new NotFoundException($"Appointment {id} not found.");
+            throw new NotFoundException($"Record {id} not found.");
 
-        // business rule: can't change date of a completed appointment
-        if (currentStatus == "Completed")
-            throw new ConflictException("Cannot modify a completed appointment.");
+        // optional business rule based on current state
+        if (currentStatus == "Locked")
+            throw new ConflictException("Cannot modify a locked record.");
 
         // do the update
         command.Parameters.Clear();
         command.CommandText = """
-            UPDATE dbo.Appointments
-            SET AppointmentDate = @Date,
-                Status = @Status,
-                Reason = @Reason,
-                InternalNotes = @Notes
-            WHERE IdAppointment = @Id
+            UPDATE dbo.SomeTable
+            SET col1 = @Val1,
+                col2 = @Val2,
+                col3 = @Val3,
+                nullableCol = @NullableVal
+            WHERE Id = @Id
             """;
-        command.Parameters.AddWithValue("@Date", dto.AppointmentDate);
-        command.Parameters.AddWithValue("@Status", dto.Status);
-        command.Parameters.AddWithValue("@Reason", dto.Reason);
-        command.Parameters.AddWithValue("@Notes", (object?)dto.InternalNotes ?? DBNull.Value);
+        command.Parameters.AddWithValue("@Val1", dto.Field1);
+        command.Parameters.AddWithValue("@Val2", dto.Field2);
+        command.Parameters.AddWithValue("@Val3", dto.Field3);
+        command.Parameters.AddWithValue("@NullableVal", (object?)dto.NullableField ?? DBNull.Value);
         command.Parameters.AddWithValue("@Id", id);
 
         await command.ExecuteNonQueryAsync();
@@ -503,7 +497,7 @@ public async Task UpdateAppointmentAsync(int id, UpdateAppointmentRequestDto dto
 ### Pattern 6: DELETE
 
 ```csharp
-public async Task DeleteAppointmentAsync(int id)
+public async Task DeleteAsync(int id)
 {
     await using var connection = new SqlConnection(_connectionString);
     await connection.OpenAsync();
@@ -511,18 +505,20 @@ public async Task DeleteAppointmentAsync(int id)
     await using var command = new SqlCommand();
     command.Connection = connection;
 
-    // check exists and get status
-    command.CommandText = "SELECT Status FROM dbo.Appointments WHERE IdAppointment = @Id";
+    // check exists — grab a field for business rules if needed
+    command.CommandText = "SELECT Status FROM dbo.SomeTable WHERE Id = @Id";
     command.Parameters.AddWithValue("@Id", id);
-    var status = await command.ExecuteScalarAsync() as string;
+    var result = await command.ExecuteScalarAsync();
 
-    if (status == null)
-        throw new NotFoundException($"Appointment {id} not found.");
-    if (status == "Completed")
-        throw new ConflictException("Cannot delete a completed appointment.");
+    if (result == null)
+        throw new NotFoundException($"Record {id} not found.");
+
+    // optional business rule
+    if (result.ToString() == "Locked")
+        throw new ConflictException("Cannot delete a locked record.");
 
     command.Parameters.Clear();
-    command.CommandText = "DELETE FROM dbo.Appointments WHERE IdAppointment = @Id";
+    command.CommandText = "DELETE FROM dbo.SomeTable WHERE Id = @Id";
     command.Parameters.AddWithValue("@Id", id);
     await command.ExecuteNonQueryAsync();
 }
@@ -534,38 +530,38 @@ public async Task DeleteAppointmentAsync(int id)
 
 ```csharp
 using Microsoft.AspNetCore.Mvc;
-using Task6.DTOs;
-using Task6.Exceptions;
-using Task6.Services;
+using YourProject.DTOs;
+using YourProject.Exceptions;
+using YourProject.Services;
 
-namespace Task6.Controllers;
+namespace YourProject.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class AppointmentsController : ControllerBase
+public class SomeController : ControllerBase
 {
     private readonly IDbService _dbService;
 
-    public AppointmentsController(IDbService dbService)
+    public SomeController(IDbService dbService)
     {
         _dbService = dbService;
     }
 
-    // GET /api/appointments?status=Scheduled&patientLastName=Kowalska
+    // GET /api/some?filter1=x&filter2=y
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] string? status, [FromQuery] string? patientLastName)
+    public async Task<IActionResult> GetAll([FromQuery] string? filter1, [FromQuery] string? filter2)
     {
-        var result = await _dbService.GetAllAppointmentsAsync(status, patientLastName);
+        var result = await _dbService.GetAllAsync(filter1, filter2);
         return Ok(result);
     }
 
-    // GET /api/appointments/5
+    // GET /api/some/5
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
         try
         {
-            var result = await _dbService.GetAppointmentByIdAsync(id);
+            var result = await _dbService.GetByIdAsync(id);
             return Ok(result);
         }
         catch (NotFoundException e)
@@ -574,49 +570,45 @@ public class AppointmentsController : ControllerBase
         }
     }
 
-    // POST /api/appointments
+    // POST /api/some
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateAppointmentRequestDto? dto)
+    public async Task<IActionResult> Create([FromBody] CreateSomeRequestDto? dto)
     {
         if (dto is null) return BadRequest("Request body is required.");
-        if (string.IsNullOrWhiteSpace(dto.Reason)) return BadRequest("Reason is required.");
-        if (dto.AppointmentDate < DateTime.Now) return BadRequest("Appointment date cannot be in the past.");
+        // add any simple input validation here (empty strings, past dates, etc.)
 
         try
         {
-            await _dbService.CreateAppointmentAsync(dto);
-            return Created($"api/appointments", null);
+            await _dbService.CreateAsync(dto);
+            return Created($"api/some", null);
         }
         catch (NotFoundException e) { return NotFound(new ErrorResponseDto { Message = e.Message }); }
         catch (ConflictException e) { return Conflict(new ErrorResponseDto { Message = e.Message }); }
     }
 
-    // PUT /api/appointments/5
+    // PUT /api/some/5
     [HttpPut("{id}")]
-    public async Task<IActionResult> Update(int id, [FromBody] UpdateAppointmentRequestDto? dto)
+    public async Task<IActionResult> Update(int id, [FromBody] UpdateSomeRequestDto? dto)
     {
         if (dto is null) return BadRequest("Request body is required.");
-
-        var validStatuses = new[] { "Scheduled", "Completed", "Cancelled" };
-        if (!validStatuses.Contains(dto.Status))
-            return BadRequest("Status must be Scheduled, Completed, or Cancelled.");
+        // add any simple input validation here
 
         try
         {
-            await _dbService.UpdateAppointmentAsync(id, dto);
+            await _dbService.UpdateAsync(id, dto);
             return Ok();
         }
         catch (NotFoundException e) { return NotFound(new ErrorResponseDto { Message = e.Message }); }
         catch (ConflictException e) { return Conflict(new ErrorResponseDto { Message = e.Message }); }
     }
 
-    // DELETE /api/appointments/5
+    // DELETE /api/some/5
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
         try
         {
-            await _dbService.DeleteAppointmentAsync(id);
+            await _dbService.DeleteAsync(id);
             return NoContent(); // 204
         }
         catch (NotFoundException e) { return NotFound(new ErrorResponseDto { Message = e.Message }); }
