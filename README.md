@@ -13,7 +13,7 @@ cd Task6
 
 # Add required packages
 dotnet add package Microsoft.Data.SqlClient
-dotnet add package Swashbuckle.AspNetCore   # Swagger UI
+
 
 # Git setup
 git init
@@ -47,7 +47,7 @@ gh auth login   # follow the prompts
 
 ```bash
 # Folders
-mkdir Controllers DTOs Exceptions Services
+mkdir DTOs Exceptions Services
 
 # DTOs — one file per DTO (rename to match your domain)
 touch DTOs/SomeListDto.cs
@@ -98,13 +98,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddScoped<IDbService, DbService>();  // <-- add this
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
-
-app.UseSwagger();
-app.UseSwaggerUI();
 
 app.UseAuthorization();
 app.MapControllers();
@@ -311,7 +306,53 @@ public class DbService : IDbService
 
 ---
 
+### How a DB operation works — step by step
+
+Every method in DbService follows the same lifecycle. Here it is in order:
+
+**Without a transaction (GET, simple DELETE):**
+```
+1. Create connection     → new SqlConnection(_connectionString)
+2. Open connection       → await connection.OpenAsync()
+3. Create command        → new SqlCommand(query, connection)
+4. Add parameters        → command.Parameters.AddWithValue(...)
+5. Execute               → ExecuteReaderAsync / ExecuteScalarAsync / ExecuteNonQueryAsync
+6. Read results          → while / if reader.ReadAsync()
+7. Return / throw        → return dto  OR  throw new NotFoundException(...)
+8. Connection closes     → automatically via await using
+```
+
+**With a transaction (POST, PUT, complex DELETE):**
+```
+1. Create connection     → new SqlConnection(_connectionString)
+2. Open connection       → await connection.OpenAsync()
+3. Begin transaction     → await connection.BeginTransactionAsync()
+4. Create command        → new SqlCommand()
+                           command.Connection = connection
+                           command.Transaction = transaction as SqlTransaction
+5. try {
+     For each operation:
+       a. Clear params   → command.Parameters.Clear()
+       b. Set query      → command.CommandText = ...
+       c. Add params     → command.Parameters.AddWithValue(...)
+       d. Execute        → ExecuteScalarAsync / ExecuteNonQueryAsync
+       e. Check result   → if null → throw NotFoundException / ConflictException
+
+6.   CommitAsync()       → saves all changes to DB
+   }
+7. catch {
+     RollbackAsync()     → undoes everything if anything failed
+     throw              → re-throws so controller returns correct HTTP status
+   }
+8. Connection closes     → automatically via await using
+```
+
+**The golden rule:** open connection → begin transaction → try/commit → catch/rollback. If anything throws inside the try, rollback runs and nothing is saved.
+
+---
+
 ### Pattern 1: SELECT many rows → return list
+
 
 ```csharp
 public async Task<IEnumerable<SomeListDto>> GetAllAsync(string? filterParam1, string? filterParam2)
