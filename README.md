@@ -909,3 +909,7 @@ if (dto.Date < DateTime.Now) return BadRequest("Date cannot be in the past.");
 | 400 Bad Request | Invalid input / business rule on input |
 | 404 Not Found | Record doesn't exist |
 | 409 Conflict | Business rule violation (e.g. deleting Completed) |
+
+
+
+Data Source=(localdb)\\MSSQLLocalDB;Initial Catalog=kolokwium;Integrated Security=True;
