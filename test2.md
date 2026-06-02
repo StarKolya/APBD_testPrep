@@ -666,3 +666,157 @@ return Conflict(new ErrorResponseDto { Message = "..." });  // 409
 | `decimal` columns lose precision | Add `[Column(TypeName = "decimal(10,2)")]` on model |
 | Many-to-many composite PK not set | Configure `HasKey(e => new { e.AId, e.BId })` in `OnModelCreating` |
 | Saving children before parent exists | `SaveChangesAsync()` after parent, then add children |
+
+
+---
+ 
+## 15. EF Core Methods — Complete Reference
+ 
+### Loading data
+ 
+```csharp
+// Get one by PK — returns null if not found
+// SQL: SELECT * FROM X WHERE ID = @id
+await _context.Orders.FindAsync(id);
+ 
+// Get first match by condition — returns null if not found
+// SQL: SELECT TOP 1 * FROM X WHERE ...
+await _context.Orders.FirstOrDefaultAsync(o => o.Id == id);
+ 
+// Get all rows as list
+// SQL: SELECT * FROM X
+await _context.Orders.ToListAsync();
+ 
+// Get all rows matching condition as list
+// SQL: SELECT * FROM X WHERE ...
+await _context.Orders.Where(o => o.StatusId == 1).ToListAsync();
+ 
+// Check if any row matches — returns bool, never null
+// SQL: SELECT CASE WHEN EXISTS (SELECT 1 FROM X WHERE ...) THEN 1 ELSE 0
+await _context.Orders.AnyAsync(o => o.Id == id);
+```
+ 
+---
+ 
+### Joins (always before the final fetch)
+ 
+```csharp
+// Join one level
+// SQL: LEFT JOIN ProductOrders ON ...
+.Include(o => o.ProductOrders)
+ 
+// Join two levels (through a join table)
+// SQL: LEFT JOIN ProductOrders ON ... LEFT JOIN Products ON ...
+.Include(o => o.ProductOrders)
+    .ThenInclude(po => po.Product)
+ 
+// Multiple separate joins
+.Include(o => o.Client)
+.Include(o => o.Status)
+.Include(o => o.ProductOrders)
+    .ThenInclude(po => po.Product)
+```
+ 
+---
+ 
+### Filtering / shaping (always before the final fetch)
+ 
+```csharp
+// Filter rows
+// SQL: WHERE ...
+.Where(o => o.StatusId == 1)
+ 
+// Map to DTO directly in the query (efficient — DB only returns needed columns)
+// SQL: SELECT o.Id, o.CreatedAt, c.FirstName ...
+.Select(o => new OrderDto
+{
+    Id         = o.Id,
+    CreatedAt  = o.CreatedAt,
+    ClientName = o.Client.FirstName   // works inside Select without Include
+})
+```
+ 
+---
+ 
+### Writing data
+ 
+```csharp
+// INSERT — add new entity
+// SQL: INSERT INTO X VALUES (...)
+_context.Orders.Add(newOrder);
+ 
+// DELETE — remove one entity
+// SQL: DELETE FROM X WHERE ID = @id
+_context.Orders.Remove(order);
+ 
+// DELETE — remove a whole collection at once
+// SQL: DELETE FROM X WHERE ... (multiple rows)
+_context.ProductOrders.RemoveRange(order.ProductOrders);
+ 
+// UPDATE — just change properties on a tracked object, no extra call needed
+// SQL: UPDATE X SET ... WHERE ID = @id
+order.StatusId    = newStatus.Id;
+order.FulfilledAt = DateTime.Now;
+ 
+// Commit — NOTHING hits the DB until this is called
+await _context.SaveChangesAsync();
+```
+ 
+---
+ 
+### The order they go in
+ 
+```csharp
+await _context.Entity       // start with the table
+    .Include(...)           // joins — add related tables
+    .ThenInclude(...)       // nested joins
+    .Where(...)             // filter rows
+    .Select(...)            // shape output (optional)
+    .FirstOrDefaultAsync()  // execute — pick ONE of these:
+    .ToListAsync()          //   → list of results
+    .AnyAsync();            //   → just true/false
+```
+ 
+> `SaveChangesAsync()` always stands alone at the end after all your changes.
+ 
+---
+ 
+### How change tracking works
+ 
+EF watches every object loaded through `_context`. You never need to "send it back":
+ 
+```csharp
+// 1. Load — EF starts tracking this object
+var order = await _context.Orders.FirstOrDefaultAsync(o => o.Id == id);
+ 
+// 2. Mutate — EF notices the change internally
+order.StatusId    = newStatus.Id;
+order.FulfilledAt = DateTime.Now;
+ 
+// 3. Commit — EF generates and runs the UPDATE automatically
+await _context.SaveChangesAsync();
+ 
+// Only needed if EF doesn't know about the object (e.g. created manually):
+_context.Orders.Update(order);   // tell EF "track this"
+await _context.SaveChangesAsync();
+```
+ 
+---
+ 
+### Method summary table
+ 
+| Method | SQL equivalent | Returns |
+|---|---|---|
+| `FindAsync(id)` | `SELECT * WHERE ID = @id` | `T?` |
+| `FirstOrDefaultAsync(x => ...)` | `SELECT TOP 1 WHERE ...` | `T?` |
+| `ToListAsync()` | `SELECT *` | `List<T>` |
+| `Where(x => ...)` | `WHERE ...` | queryable (chain more) |
+| `AnyAsync(x => ...)` | `WHERE EXISTS (...)` | `bool` |
+| `Include(x => x.Nav)` | `LEFT JOIN ...` | queryable (chain more) |
+| `ThenInclude(x => x.Nav)` | `LEFT JOIN ... (nested)` | queryable (chain more) |
+| `Select(x => new ...)` | `SELECT col1, col2 ...` | queryable (chain more) |
+| `Add(entity)` | `INSERT INTO ...` | void |
+| `Remove(entity)` | `DELETE WHERE ID = @id` | void |
+| `RemoveRange(list)` | `DELETE WHERE ... (bulk)` | void |
+| `SaveChangesAsync()` | `COMMIT` (runs everything) | void |
+ 
