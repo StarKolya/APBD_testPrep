@@ -1,3 +1,4 @@
+```csharp
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Task9.Data;
@@ -142,13 +143,13 @@ public class SubmissionsController : ControllerBase
         return Ok(submission);
     }
 }
-
+```
 
 
 
 ---
 
-
+```csharp
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Task9.Data;
@@ -209,9 +210,11 @@ public class StudentsController : ControllerBase
         return Ok(dashboard);
     }
 }
+```
 
 ---
 
+```csharp
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Task9.Data;
@@ -286,3 +289,4 @@ public class CoursesController : ControllerBase
         return Ok(assignments);
     }
 }
+```
