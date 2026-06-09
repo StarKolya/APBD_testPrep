@@ -13,6 +13,9 @@ cd MyProject
 dotnet add package Microsoft.EntityFrameworkCore.SqlServer --version 9.0.5
 dotnet add package Microsoft.EntityFrameworkCore.Design --version 9.0.5
 
+git remote add origin https://github.com/StarKolya/APBD_ttPrep
+git push -u origin main
+
 # Git setup
 git init
 dotnet new gitignore
